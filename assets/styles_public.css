@@ -1,0 +1,18 @@
+input.mipos_disabled {
+	background: #efeeee !important;
+}
+
+#mipos_billing_fv_identification_type {
+	background: transparent !important;
+	border: 1px solid #ccc;
+	padding: 10px;
+}
+
+#mipos_billing_fv_required_fe {
+	height: 20px;
+	width: 20px;
+	display: inline-flex;
+	justify-content: center;
+	align-items: center;
+	font-size: 20px;
+}
