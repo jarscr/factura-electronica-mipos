@@ -51,23 +51,14 @@ function mipos_createTaxesHaciendaWoocommerce() {
         'slug' => 'iva-tarifa-general-13'
       )
     );
-    foreach($rate_classes as $rc) {
-      $slug = $rc['slug'];
-      $exists_rc = $wpdb->get_results(
-        $wpdb->prepare(
-          "SELECT * FROM {$wpdb->prefix}wc_tax_rate_classes WHERE slug = %s",
-          $slug
-        )
-      );
-      
-
-      if(!count($exists_rc)) {
-        $wpdb->insert("{$table_prefix}wc_tax_rate_classes",
-          $rc
-        ); 
+    foreach ($rate_classes as $rc) {
+      $tax_class = \WC_Tax::get_tax_class_by('slug', $rc['slug']);
+      if( ! $tax_class) {
+          \WC_Tax::create_tax_class($rc['name'], $rc['slug']);
       }
-      
     }
+  //End store rate classes
+  //Store tax classes
     
 
 
@@ -147,22 +138,21 @@ function mipos_createTaxesHaciendaWoocommerce() {
     )
   );
 
-  foreach($tax_rates as $tr) {
+  foreach ($tax_rates as $tr) {
     $tax_rate_class = $tr['tax_rate_class'];
-    $tax_rate_name = $tr['tax_rate_name'];
+      $tax_rate_name = $tr['tax_rate_name'];
 
-    $exists_tr = $wpdb->get_results(
-      $wpdb->prepare(
-        "SELECT * FROM {$wpdb->prefix}woocommerce_tax_rates WHERE tax_rate_class = %s AND tax_rate_name=%s",
-        $tax_rate_class,$tax_rate_name
-      )
-    );
-    if(!count($exists_tr)) {
-      $wpdb->insert("{$table_prefix}woocommerce_tax_rates",
-        $tr
-      ); 
-    }
+      $tax_rate = WC_Tax_Rate::get_by_tax_rate_and_class(
+          $tr['tax_rate'],
+          $tax_rate_class
+      );
+
+      if (!$tax_rate) {
+        \WC_Tax::create_tax_rate($tr);
+      }
   }
+  // Set the transient to indicate that the tax rates have been created
+  set_transient('mipos_taxes_created', true, WEEK_IN_SECONDS);
 }
 //End create taxes
 
@@ -192,6 +182,8 @@ add_action('woocommerce_order_status_processing', function($order_id) {
 },  10, 10);
 //add_action('woocommerce_order_status_changed', 'mipos_create_invoice_for_wc_order', 10, 3);
 add_action('woocommerce_order_status_completed', function($order_id) {
+  // echo $order_id;
+  // error_log("COMPLETED: $order_id", 0);
   mipos_create_invoice_for_wc_order($order_id, null, 'completed');
 },  10, 10);
 
@@ -324,7 +316,7 @@ function mipos_create_invoice_for_wc_order($order_id, $old_status, $new_status) 
         )
       );
 
- 
+
 
       $contador++;
     }
@@ -334,7 +326,12 @@ function mipos_create_invoice_for_wc_order($order_id, $old_status, $new_status) 
     //Agregar costo de envio a un item de la orden
     $shipping_total = $order->get_shipping_total();
     $shipping_tax = $order->get_shipping_tax();
-    $percentage_tax_shipping = ($shipping_tax * 100) / $shipping_total;
+    if(isset($shipping_tax) && $shipping_tax > 0) {
+      $percentage_tax_shipping = ($shipping_tax * 100) / $shipping_total;
+    } else {
+      $percentage_tax_shipping = 0;
+    }
+   
 
     if($shipping_total > 0){
       $tax_array_shipping = array(
@@ -373,7 +370,7 @@ function mipos_create_invoice_for_wc_order($order_id, $old_status, $new_status) 
     }
 
 
-   // mipos_print_to_log();
+  
     //Fin agregar costo de envio
 
 
@@ -464,7 +461,6 @@ function mipos_create_invoice_for_wc_order($order_id, $old_status, $new_status) 
     
 
     $body = wp_json_encode($body);
-    mipos_print_to_log($endpoint.': '. $body);
 
     //error_log("$body", 0);
 
@@ -486,9 +482,8 @@ function mipos_create_invoice_for_wc_order($order_id, $old_status, $new_status) 
     $response = wp_remote_post($endpoint, $options);
     // Response body.
     $body = wp_remote_retrieve_body( $response );
-    mipos_print_to_log($body);
     $responceData = ( ! is_wp_error( $response ) ) ? json_decode( $body, true ) : null;
-    //error_log( );
+    //error_log(wp_json_encode($responceData ),0);
 
     
     if($responceData) {
@@ -501,29 +496,33 @@ function mipos_create_invoice_for_wc_order($order_id, $old_status, $new_status) 
       }
     } else {
       update_post_meta($order_id, 'mipos_error', sanitize_text_field(wp_json_encode($responceData))); 
-      mipos_print_to_log(wp_json_encode($responceData));
     }
 
   } catch(Exception $e) {
-    mipos_print_to_log("ERROR: ".$e->getMessage());
+    $errorMessage = $e->getMessage();
+    $errorCode = $e->getCode();
+    $error_message = sprintf('Error %1$s: %2$s', $errorCode, $errorMessage);
+    // Log the error message
+    wc_add_notice( $error_message,  'factura-electronica-mipos' );
   }
 
 }
 
 function mipos_admin_page_html() {
-  // check user capabilities
-  if (!current_user_can('manage_options')) {
-    return;
-  }
-
-  //Get the active tab from the $_GET param
-  $default_tab = null;
-  // Verificar el nonce (asumiendo que se pasa en la URL como 'nonce')
-  if ( ! isset( $_GET['nonce'] ) || ! wp_verify_nonce( $_GET['nonce'], 'mipos_tab_action' ) ) {
-    $tab = $default_tab; // Si el nonce falla, usa el valor por defecto
-  } else {
-    $tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : $default_tab;
-  }
+    // check user capabilities
+    if (!current_user_can('manage_options')) {
+      return;
+    }
+  
+    //Get the active tab from the $_GET param
+    $default_tab = null;
+    // Verificar el nonce (asumiendo que se pasa en la URL como 'nonce')
+    $nonce = isset($_GET['nonce']) ? sanitize_key(wp_unslash($_GET['nonce'])) : '';
+    if (empty($nonce) || ! wp_verify_nonce( $nonce, 'mipos_tab_action' ) ) {
+      $tab = $default_tab; // Si el nonce falla, usa el valor por defecto
+    } else {
+      $tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : $default_tab;
+    }
 ?>
 
     <!-- Here are our tabs -->

@@ -1,4 +1,4 @@
-<?php	
+<?php
 /*
 Plugin Name: Factura Electronica miPOS
 Plugin URI: https://www.jascr.com/
@@ -10,12 +10,12 @@ Text Domain: factura-electronica-mipos
 */
 define('MIPOS_PLUGIN_ROUTE', plugin_dir_path(__FILE__));
 require_once(MIPOS_PLUGIN_ROUTE.'helpers.php');
-
+require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 //Styles
 function mipos_scripts() {
-  wp_register_style('mipos_cssselect2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/css/select2.min.css' );
+  wp_register_style('mipos_cssselect2', plugin_dir_url( __FILE__ ).'assets/select2.min.css' );
   wp_enqueue_style('mipos_cssselect2');
-  wp_register_script( 'mipos_jsselect2', 'https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/js/select2.min.js', null, null, true);
+  wp_register_script( 'mipos_jsselect2',  plugin_dir_url( __FILE__ ).'assets/select2.min.js', null, null, true);
   wp_enqueue_script('mipos_jsselect2');
 
   wp_register_style('mipos_styles', plugin_dir_url( __FILE__ ).'assets/styles.css', '', '1.0', 'all');
@@ -77,32 +77,63 @@ function mipos_checkout_add_fields_fe($checkout) {
 add_action('woocommerce_checkout_process', 'mipos_validate_custom_fields_checkout');
 function mipos_validate_custom_fields_checkout() {
   // Check if set, if its not set add an error.
-    $mipos_billing_fe_identification_number = sanitize_text_field($_POST['mipos_billing_fe_identification_number']); 
-    $mipos_billing_fe_required_fe = sanitize_text_field($_POST['mipos_billing_fe_required_fe']); 
 
-  if (!$mipos_billing_fe_identification_number && $mipos_billing_fe_required_fe) {
-    if(!is_integer($mipos_billing_fe_identification_number)) {
-      wc_add_notice( __('Por favor ingrese un número de identificación válido.', 'factura-electronica-mipos'));
-    }
+  
+
+  if (isset($_POST['mipos_billing_fe_required_fe']) && !empty( $_POST['mipos_billing_fe_required_fe'] ) ) {
+    $mipos_billing_fe_required_fe = sanitize_text_field(wp_unslash($_POST['mipos_billing_fe_required_fe']));
+  } else {
+    $mipos_billing_fe_required_fe = false;
+  }
+
+  if(isset($_POST['mipos_billing_fe_identification_number'])) {
+    $mipos_billing_fe_identification_number = sanitize_text_field(wp_unslash($_POST['mipos_billing_fe_identification_number']));
+  } else {
+    $mipos_billing_fe_identification_number = null;
+  }
+
+  if ($mipos_billing_fe_required_fe && (is_null($mipos_billing_fe_identification_number) || empty($mipos_billing_fe_identification_number))) {
+      wc_add_notice( __('Por favor ingrese un número de identificación válido.', 'factura-electronica-mipos'), 'error');
   }
 }
 
 //Save custom fields checkout
 add_action('woocommerce_checkout_update_order_meta', 'mipos_wk_save_custom_field_data');
 function mipos_wk_save_custom_field_data($order_id) {
-  $mipos_billing_fe_identification_type = sanitize_text_field($_POST['mipos_billing_fe_identification_type']);
+  // Verify nonce
+  $nonce = isset($_POST['_wpnonce']) ? sanitize_key(wp_unslash($_POST['_wpnonce'])) : '';
+  if (!isset($nonce) || !wp_verify_nonce($nonce, 'woocommerce-process_checkout')) {
+    wc_add_notice(__('Error de seguridad 111. Por favor, intente de nuevo.', 'factura-electronica-mipos'), 'error');
+    return;
+  }
+
+  // Check if set, if its not set add an error.
+  if(isset($_POST['mipos_billing_fe_identification_type'])) {
+      $mipos_billing_fe_identification_type = sanitize_text_field(wp_unslash($_POST['mipos_billing_fe_identification_type']));
+  } else {
+    $mipos_billing_fe_identification_type = null;
+  }
 
   if(!empty($mipos_billing_fe_identification_type) ) {
-    update_post_meta($order_id, 'mipos_billing_fe_identification_type', sanitize_text_field($_POST['mipos_billing_fe_identification_type']));
+  update_post_meta($order_id, 'mipos_billing_fe_identification_type', $mipos_billing_fe_identification_type);
   }
 
-  $mipos_billing_fe_identification_number = sanitize_text_field($_POST['mipos_billing_fe_identification_number']); 
-  if(!empty($mipos_billing_fe_identification_number) ) {
-    update_post_meta($order_id, 'mipos_billing_fe_identification_number', sanitize_text_field($_POST['mipos_billing_fe_identification_number']));
+  if(isset($_POST['mipos_billing_fe_identification_number'])) {
+    $mipos_billing_fe_identification_number = sanitize_text_field(wp_unslash($_POST['mipos_billing_fe_identification_number']));
+  } else {
+    $mipos_billing_fe_identification_number = null;
   }
-  $mipos_billing_fe_required_fe = sanitize_text_field($_POST['mipos_billing_fe_required_fe']);
+
+  if(!empty($mipos_billing_fe_identification_number) ) {
+  update_post_meta($order_id, 'mipos_billing_fe_identification_number', $mipos_billing_fe_identification_number);
+  }
+  if(isset($_POST['mipos_billing_fe_required_fe'])) {
+      $mipos_billing_fe_required_fe = sanitize_text_field(wp_unslash($_POST['mipos_billing_fe_required_fe']));
+  } else {
+      $mipos_billing_fe_required_fe = false;
+  }
   if($mipos_billing_fe_required_fe) {
-    update_post_meta($order_id, 'mipos_billing_fe_required_fe', $mipos_billing_fe_required_fe);
+  update_post_meta($order_id, 'mipos_billing_fe_required_fe', $mipos_billing_fe_required_fe);
   }
 }
 
@@ -123,7 +154,7 @@ function woocommerce_product_custom_fields()
 
   $cabys = get_post_meta($post->ID, 'mipos_cabys', true);
 
-  ?>
+?>
     <p class="form-field">
     <label for="">Código cabys</label>
       <select id="mipos_select2" name="mipos_cabys" style="width: 450px" required>
@@ -135,25 +166,27 @@ function woocommerce_product_custom_fields()
       </select>
     </p>
   <?php
+  //Add the fields in the database
+  if ( !get_post_meta($post->ID, 'mipos_unid_hacienda', true) ) {
+    add_post_meta($post->ID, 'mipos_unid_hacienda', 'Unid');
+  }
+  if (!get_post_meta($post->ID, 'mipos_cabys', true)) {
+      add_post_meta($post->ID, 'mipos_cabys', '');
+  }
 }
 
 // Save custom Fields
 add_action('woocommerce_process_product_meta', 'mipos_save_woocommerce_product_custom_fields');
+
 function mipos_save_woocommerce_product_custom_fields($post_id)
 {
-    $product = wc_get_product($post_id);
-    $fe_unid_hacienda = sanitize_text_field($_POST['mipos_unid_hacienda']);
-    $fe_unid_hacienda = isset($fe_unid_hacienda ) ? $fe_unid_hacienda  : '';
-    //$product->update_meta_data('mipos_unid_hacienda', $fe_unid_hacienda);
 
-    $cabys = sanitize_text_field($_POST['mipos_cabys']);
-    $cabys = isset($cabys) ? $cabys : '';
-    $product->update_meta_data('mipos_cabys', $cabys);
-    
-    // $fe_product_type = isset($_POST['_fe_product_type']) ? $_POST['_fe_product_type'] : '';
-    // $product->update_meta_data('_fe_product_type', sanitize_text_field($fe_product_type));
-    
-    $product->save();
+  $fe_unid_hacienda = isset($_POST['mipos_unid_hacienda'] ) ? sanitize_text_field(wp_unslash($_POST['mipos_unid_hacienda'])) :'Unid';
+  $cabys = isset( $_POST[ 'mipos_cabys' ] ) ? sanitize_text_field(wp_unslash($_POST['mipos_cabys'])) : '';
+  $product = wc_get_product($post_id);
+  $product->update_meta_data('mipos_unid_hacienda', $fe_unid_hacienda);
+  $product->update_meta_data('mipos_cabys', $cabys);
+  $product->save();
 }
 //End save custom fields
 
@@ -177,44 +210,43 @@ function mipos_show_fe_hacienda_clave($order) {
 }
 
 
-function mipos_add_checkout_script() { ?>
+function mipos_add_checkout_script() { 
+  
+echo '<script type="text/javascript">
 
-  <script type="text/javascript">
+(function ($) {
 
-;(function ($) {
-
-  $('#mipos_billing_fe_identification_number').addClass('mipos_disabled')
+  $("#mipos_billing_fe_identification_number").addClass("mipos_disabled");
   $("#mipos_billing_fe_identification_type" ).prop( "disabled", true );
   $("#mipos_billing_fe_identification_number" ).prop( "disabled", true );
   
-	$('#mipos_billing_fe_required_fe').change(function () {
-    let fe_checked = $('#mipos_billing_fe_required_fe').is(':checked');
+	$("#mipos_billing_fe_required_fe").change(function () {
+    let fe_checked = $("#mipos_billing_fe_required_fe").is(":checked");
 
-    let identificationTypeLabel = $('label[for="mipos_billing_fe_identification_type"]');
-    let identificationNumberLabel = $('label[for="mipos_billing_fe_identification_number"]');
+    let identificationTypeLabel = $(\'label[for="mipos_billing_fe_identification_type"]\');
+    let identificationNumberLabel = $(\'label[for="mipos_billing_fe_identification_number"]\');
     console.log(identificationTypeLabel, identificationNumberLabel)
     
     if(fe_checked) {
-      $('#mipos_billing_fe_identification_number').removeClass('mipos_disabled')
+      $("#mipos_billing_fe_identification_number").removeClass("mipos_disabled");
       $("#mipos_billing_fe_identification_type" ).prop( "disabled", false );
       $("#mipos_billing_fe_identification_number" ).prop( "disabled", false );
-      identificationTypeLabel.html('Tipo de identificación <abbr class="required" title="obligatorio">*</abbr>')
-      identificationNumberLabel.html('Número de identificación <abbr class="required" title="obligatorio">*</abbr>')
+      identificationTypeLabel.html(\'Tipo de identificación <abbr class="required" title="obligatorio">*</abbr>\');
+      identificationNumberLabel.html(\'Número de identificación <abbr class="required" title="obligatorio">*</abbr>\');
 
     } else {
-      $('#mipos_billing_fe_identification_number').addClass('mipos_disabled')
+      $("#mipos_billing_fe_identification_number").addClass("mipos_disabled");
       $("#mipos_billing_fe_identification_type" ).prop( "disabled", true );
       $("#mipos_billing_fe_identification_number" ).prop( "disabled", true );
-      identificationTypeLabel.text('Tipo de identificación (opcional)')
-      identificationNumberLabel.text('Número de identificación (opcional)')
+      identificationTypeLabel.text(\'Tipo de identificación (opcional\');
+      identificationNumberLabel.text(\'Número de identificación (opcional)\');
     }
-   
+  
 	})
 })(jQuery)       
 
-  </script>
+  </script>';
 
-<?php       
 }
 add_action( 'woocommerce_after_checkout_form', 'mipos_add_checkout_script' );
 

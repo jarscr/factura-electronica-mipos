@@ -21,7 +21,7 @@
 
   $('#mipos_select2').select2({
     delay: 200,
-    minimumInputLength: 6,
+    minimumInputLength: 3,
     language: {
       noResults: function () {
         return 'No hay resultados'
@@ -33,7 +33,7 @@
         return 'Buscando...'
       },
       inputTooShort: function () {
-        return 'Ingresa al menos 6 caracteres...'
+        return 'Ingresa al menos 3 caracteres...'
       },
     },
     ajax: {

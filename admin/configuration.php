@@ -1,97 +1,106 @@
 <?php
 namespace MIPOS;
-if (! current_user_can('manage_options')) wp_die(esc_html__('No tienes suficientes permisos para acceder a esta página.', 'factura-electronica-mipos'));
 
-require_once(MIPOS_PLUGIN_ROUTE.'helpers.php');
+if (!current_user_can('manage_options')) {
+    wp_die(esc_html__('No tienes suficientes permisos para acceder a esta página.', 'factura-electronica-mipos'));
+}
 
-//If method is post
+require_once(MIPOS_PLUGIN_ROUTE . 'helpers.php');
+
+// If method is post
 $errors = [];
 $test = false;
 $test_success = false;
 $save_success = false;
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  if (isset($_POST['mipos_download_log'])) {
-    downloadLog();
-  } else if (isset($_POST['mipos_access_api_test'])) { //If post is test
-    $modo_hacienda = get_option('mipos_modo_hacienda');
-    $miPOSURL = get_option('mipos_url');
-    $endpoint = mipos_getUrlApi($modo_hacienda, $miPOSURL);
 
-    $body = array (
-      'sucursal' => '004',
-      'punto' => '00001',
-      'actividad' => '014002',
-      'comentarios' => 'Pago sin descuento'
-    );
-
-
-    $body = wp_json_encode($body);
-    $options = [
-      'body'    => $body,
-      'headers' => [
-          'Content-Type' => 'application/json',
-          'Accept'       => 'application/json',
-          'authorization' => 'Basic '.get_option('mipos_api_token'),
-      ],
-      'timeout'     => 60,
-      'redirection' => 5,
-      'blocking'    => true,
-      'httpversion' => '1.0',
-      'sslverify'   => false,
-      'data_format' => 'body',
-    ];
-    
-    $response = wp_remote_post($endpoint, $options);
-    $body = wp_remote_retrieve_body( $response );
-    $responceData = ( ! is_wp_error( $response ) ) ? json_decode( $body, true ) : null;
-    $test = true;
-    if ($responceData && isset($responceData['errors']['medio_pago'])) {
-      $test_success = true;
-    } else {
-      $test_success = false;
+// Check if $_SERVER['REQUEST_METHOD'] is set before using it
+if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+   // Verify the nonce
+    // Unslash and sanitize the nonce before verifying
+    $nonce = isset($_POST['mipos_configuration_nonce']) ? sanitize_key(wp_unslash($_POST['mipos_configuration_nonce'])) : '';
+    if (empty($nonce) || !wp_verify_nonce($nonce, 'mipos_configuration_action')) {
+        wp_die(esc_html__('¡Lo siento! La verificación de seguridad ha fallado.', 'factura-electronica-mipos'));
     }
-  } else { //If Not test
-    //Fields
-    $mipos_api_token = sanitize_text_field($_POST['mipos_api_token']);
-    $mipos_url = sanitize_text_field($_POST['mipos_url']);
-    $mipos_emisor = sanitize_text_field($_POST['mipos_emisor']);
-    $mipos_economic_activity_hacienda = sanitize_text_field($_POST['mipos_economic_activity_hacienda']);
-    $mipos_modo_hacienda = isset($_POST['mipos_modo_hacienda']) ? sanitize_text_field($_POST['mipos_modo_hacienda']) : null;
-    $mipos_when_send_fe = isset($_POST['mipos_when_send_fe']) ? sanitize_text_field($_POST['mipos_when_send_fe']) : null;
-    $mipos_sucursal = sanitize_text_field($_POST['mipos_sucursal']);
-    //Validate inputs
-    $errors = mipos_validate_field('mipos_api_token', $mipos_api_token, ['required'], $errors);
-    $errors = mipos_validate_field('mipos_url', $mipos_url, ['required'], $errors);
-    $errors = mipos_validate_field('mipos_emisor', $mipos_emisor, ['required'], $errors);
-    $errors = mipos_validate_field('mipos_economic_activity_hacienda', $mipos_economic_activity_hacienda, ['required'], $errors);
-    $errors = mipos_validate_field('mipos_modo_hacienda', $mipos_modo_hacienda, ['required'], $errors);
-    $errors = mipos_validate_field('mipos_when_send_fe', $mipos_when_send_fe, ['required'], $errors);
-    $errors = mipos_validate_field('mipos_sucursal', $mipos_sucursal, ['sucursal_max'], $errors);
 
-    //End validate inputs
+    if (isset($_POST['mipos_access_api_test'])) {
+        $modo_hacienda = get_option('mipos_modo_hacienda');
+        $miPOSURL = get_option('mipos_url');
+        $endpoint = mipos_getUrlApi($modo_hacienda, $miPOSURL);
 
-    //If not errors
-    if (!count($errors)) {
-      //Store info
-      update_option('mipos_api_token', $mipos_api_token);
-      update_option('mipos_url', $mipos_url);
-      update_option('mipos_emisor', $mipos_emisor);
-      update_option('mipos_economic_activity_hacienda', $mipos_economic_activity_hacienda);
-      update_option('mipos_modo_hacienda', $mipos_modo_hacienda);
-      update_option('mipos_when_send_fe', $mipos_when_send_fe);
-      update_option('mipos_sucursal', $mipos_sucursal ? $mipos_sucursal : null);
-      $save_success = true;
+        $body = array(
+            'sucursal' => '004',
+            'punto' => '00001',
+            'actividad' => '014002',
+            'comentarios' => 'Pago sin descuento'
+        );
+
+        $body = wp_json_encode($body);
+        $options = [
+            'body' => $body,
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+                'authorization' => 'Basic ' . get_option('mipos_api_token'),
+            ],
+            'timeout' => 60,
+            'redirection' => 5,
+            'blocking' => true,
+            'httpversion' => '1.0',
+            'sslverify' => false,
+            'data_format' => 'body',
+        ];
+
+        $response = wp_remote_post($endpoint, $options);
+        $body = wp_remote_retrieve_body($response);
+        $responceData = (!is_wp_error($response)) ? json_decode($body, true) : null;
+        $test = true;
+        if ($responceData && isset($responceData['errors']['medio_pago'])) {
+            $test_success = true;
+        } else {
+            $test_success = false;
+        }
+    } else { // If Not test
+         // Fields
+         $mipos_api_token = isset($_POST['mipos_api_token']) ? sanitize_text_field(wp_unslash($_POST['mipos_api_token'])) : '';
+         $mipos_url = isset($_POST['mipos_url']) ? sanitize_text_field(wp_unslash($_POST['mipos_url'])) : '';
+         $mipos_emisor = isset($_POST['mipos_emisor']) ? sanitize_text_field(wp_unslash($_POST['mipos_emisor'])) : '';
+         $mipos_economic_activity_hacienda = isset($_POST['mipos_economic_activity_hacienda']) ? sanitize_text_field(wp_unslash($_POST['mipos_economic_activity_hacienda'])) : '';
+         $mipos_modo_hacienda = isset($_POST['mipos_modo_hacienda']) ? sanitize_text_field(wp_unslash($_POST['mipos_modo_hacienda'])) : null;
+         $mipos_when_send_fe = isset($_POST['mipos_when_send_fe']) ? sanitize_text_field(wp_unslash($_POST['mipos_when_send_fe'])) : null;
+         $mipos_sucursal = isset($_POST['mipos_sucursal']) ? sanitize_text_field(wp_unslash($_POST['mipos_sucursal'])) : '';
+         // Validate inputs
+         $errors = mipos_validate_field('mipos_api_token', $mipos_api_token, ['required'], $errors);
+         $errors = mipos_validate_field('mipos_url', $mipos_url, ['required'], $errors);
+         $errors = mipos_validate_field('mipos_emisor', $mipos_emisor, ['required'], $errors);
+         $errors = mipos_validate_field('mipos_economic_activity_hacienda', $mipos_economic_activity_hacienda, ['required'], $errors);
+         $errors = mipos_validate_field('mipos_modo_hacienda', $mipos_modo_hacienda, ['required'], $errors);
+         $errors = mipos_validate_field('mipos_when_send_fe', $mipos_when_send_fe, ['required'], $errors);
+         $errors = mipos_validate_field('mipos_sucursal', $mipos_sucursal, ['sucursal_max'], $errors);
+ 
+         // End validate inputs
+
+        // If not errors
+        if (!count($errors)) {
+            // Store info
+            update_option('mipos_api_token', $mipos_api_token);
+            update_option('mipos_url', $mipos_url);
+            update_option('mipos_emisor', $mipos_emisor);
+            update_option('mipos_economic_activity_hacienda', $mipos_economic_activity_hacienda);
+            update_option('mipos_modo_hacienda', $mipos_modo_hacienda);
+            update_option('mipos_when_send_fe', $mipos_when_send_fe);
+            update_option('mipos_sucursal', $mipos_sucursal ? $mipos_sucursal : null);
+            $save_success = true;
+        }
     }
-  }
 }
 ?>
-</style>
 <div style="position:relative;" class="wrap">
-	<div style="display: flex; width: 100%;justify-content: space-between">
-		<p style="padding-left: 20px;font-size: 14px">Ingresa tus datos de acceso y comienza a facturar</p>
+  <div style="display: flex; width: 100%;justify-content: space-between">
+    <p style="padding-left: 20px;font-size: 14px">Ingresa tus datos de acceso y comienza a facturar</p>
     
     <?php if(get_option('mipos_access_token') && get_option('mipos_url')) {?>
     <form method="post">
+        <?php wp_nonce_field('mipos_configuration_action', 'mipos_configuration_nonce'); ?>
       <input type="hidden" name="mipos_access_api_test" value="test">
       <button type="submit" class="mipos_btn_access_test">
         <span class="dashicons dashicons-update"></span>
@@ -126,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div>
     <div>
     <form method="post">
-
+        <?php wp_nonce_field('mipos_configuration_action', 'mipos_configuration_nonce'); ?>
       <div class="mipos_item_form">
         <label>KEY</label>
         <input type="text" name="mipos_api_token" value="<?php echo esc_attr(get_option('mipos_api_token')); ?>" />
@@ -239,8 +248,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
     </div>
   </div>
-
-
 </div>
-<?php
- ?>
